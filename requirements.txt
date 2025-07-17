@@ -1,4 +1,4 @@
 Flask==2.3.2
-yt-dlp==2023.7.6
+yt-dlp==2023.11.16
 ffmpeg-python==0.2.0
-uuid==1.30
+Werkzeug==2.3.7

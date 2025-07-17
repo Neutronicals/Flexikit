@@ -89,17 +89,25 @@ def index():
     return render_template('index.html', current_year=datetime.now().year)
 
 @app.route('/get_info', methods=['POST'])
-def get_info():
-    url = request.form.get('url', '').strip()
-    if not url:
-        return jsonify({'success': False, 'error': 'URL is required'}), 400
+def get_video_info(url):
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': False,
+        # Add these options to handle restricted videos
+        'age_limit': 99,  # Bypass age restriction
+        'geo_bypass': True,  # Bypass geographic restrictions
+        'geo_bypass_country': 'US',  # Set to your preferred country
+    }
     
     try:
-        info = VideoDownloader.get_info(url)
-        return jsonify({'success': True, 'info': info})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
-
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            # Rest of your code...
+    except yt_dlp.utils.DownloadError as e:
+        if 'Video unavailable' in str(e):
+            raise Exception("This video is unavailable. It may be private, age-restricted, or blocked in your country.")
+            
 @app.route('/download', methods=['POST'])
 def download():
     url = request.form.get('url', '').strip()

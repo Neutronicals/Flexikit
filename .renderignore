@@ -5,5 +5,5 @@ __pycache__/
 *.pyd
 .DS_Store
 .env
-static/downloads/*
-!static/downloads/.gitkeep
+*.log
+*.tmp

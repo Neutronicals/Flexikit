@@ -4,9 +4,10 @@ import uuid
 from flask import Flask, render_template, request, send_file, jsonify, send_from_directory
 from datetime import datetime
 from werkzeug.utils import secure_filename
+import threading
+import shutil
 
-# Initialize Flask app
-app = Flask(__name__, static_url_path='', static_folder='static')
+app = Flask(__name__, static_folder='static', static_url_path='')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB limit
 app.config['DOWNLOAD_FOLDER'] = 'static/downloads/'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
@@ -14,8 +15,20 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 # Ensure download folder exists
 os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
 
+def cleanup_downloads():
+    """Clean up old download files"""
+    try:
+        for filename in os.listdir(app.config['DOWNLOAD_FOLDER']):
+            file_path = os.path.join(app.config['DOWNLOAD_FOLDER'], filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+    except Exception as e:
+        print(f"Cleanup error: {e}")
+
 def get_video_info(url):
-    """Fetch video info from YouTube"""
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -50,7 +63,7 @@ def get_video_info(url):
         }
 
 def download_video(url, format_id):
-    """Download video in selected format"""
+    """Download video with proper error handling"""
     unique_id = str(uuid.uuid4())
     download_path = os.path.join(app.config['DOWNLOAD_FOLDER'], f'{unique_id}.%(ext)s')
     
@@ -58,32 +71,31 @@ def download_video(url, format_id):
         'format': format_id,
         'outtmpl': download_path,
         'quiet': True,
+        'no_warnings': True,
+        'ignoreerrors': False,
+        'retries': 3,
     }
     
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        filename = ydl.prepare_filename(info)
-        
-    return filename
-
-@app.route('/')
-def index():
-    """Main page"""
-    return render_template('index.html', current_year=datetime.now().year)
-
-@app.route('/get_info', methods=['POST'])
-def get_info():
-    """API endpoint to get video info"""
-    url = request.form['url']
     try:
-        info = get_video_info(url)
-        return jsonify({'success': True, 'info': info})
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+            
+            # Verify file exists and has content
+            if not os.path.exists(filename):
+                raise FileNotFoundError(f"Downloaded file not found at {filename}")
+            if os.path.getsize(filename) == 0:
+                raise ValueError("Downloaded file is empty")
+                
+            return filename
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        # Clean up if download failed
+        if 'filename' in locals() and os.path.exists(filename):
+            os.remove(filename)
+        raise e
 
 @app.route('/download', methods=['POST'])
 def download():
-    """API endpoint to download video"""
     url = request.form['url']
     format_id = request.form['format_id']
     
@@ -91,6 +103,17 @@ def download():
         filepath = download_video(url, format_id)
         filename = secure_filename(os.path.basename(filepath))
         
+        # Schedule cleanup after sending the file
+        @after_this_request
+        def cleanup(response):
+            try:
+                # Start cleanup in a separate thread
+                thread = threading.Thread(target=cleanup_downloads)
+                thread.start()
+            except Exception as e:
+                app.logger.error(f"Cleanup error: {e}")
+            return response
+            
         return send_file(
             filepath,
             as_attachment=True,
@@ -98,13 +121,10 @@ def download():
             mimetype='application/octet-stream'
         )
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return jsonify({
+            'success': False, 
+            'error': str(e),
+            'message': 'Failed to download video. Please try another format.'
+        }), 400
 
-@app.route('/health')
-def health_check():
-    """Health check endpoint for Render"""
-    return jsonify({"status": "healthy"}), 200
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+# ... (keep all other routes the same)

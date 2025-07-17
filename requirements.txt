@@ -1,5 +1,5 @@
 Flask==2.3.2
 yt-dlp==2023.11.16
-ffmpeg-python==0.2.0
+waitress==2.1.2
 Werkzeug==2.3.7
-requests==2.31.0
+ffmpeg-python==0.2.0

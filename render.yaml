@@ -6,10 +6,11 @@ services:
       apt-get update
       apt-get install -y ffmpeg
       pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: python app.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.13
       - key: SECRET_KEY
         generateValue: true
     plan: free
+    healthCheckPath: /health

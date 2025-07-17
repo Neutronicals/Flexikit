@@ -51,39 +51,63 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Download video
     async function downloadVideo() {
-        const url = youtubeUrl.value.trim();
-        const formatSelect = document.getElementById('formatSelect');
-        const formatId = formatSelect.value;
-        
-        if (!url || !formatId) return showError('Please select a format to download');
-        
-        showDownloadProgress();
-        
-        try {
-            const response = await fetch('/download', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`
-            });
-            
-            if (!response.ok) throw new Error('Download failed');
-            
-            const blob = await response.blob();
-            const contentDisposition = response.headers.get('Content-Disposition');
-            const filename = contentDisposition 
-                ? contentDisposition.split('filename=')[1].replace(/"/g, '')
-                : 'video.mp4';
-            
-            downloadFile(blob, filename);
-            showSuccess('Download complete!');
-        } catch (err) {
-            showError(err.message || 'Download failed');
-        } finally {
-            setTimeout(() => downloadProgress.classList.add('d-none'), 3000);
-        }
+    const url = youtubeUrl.value.trim();
+    const formatSelect = document.getElementById('formatSelect');
+    const formatId = formatSelect.value;
+    
+    if (!url || !formatId) {
+        showError('Please select a format to download');
+        return;
     }
+    
+    showDownloadProgress();
+    
+    try {
+        const response = await fetch('/download', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: `url=${encodeURIComponent(url)}&format_id=${encodeURIComponent(formatId)}`
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Download failed');
+        }
+        
+        // Get filename from content-disposition header
+        const contentDisposition = response.headers.get('content-disposition');
+        let filename = 'video.mp4';
+        if (contentDisposition) {
+            const matches = contentDisposition.match(/filename="?(.+?)"?$/);
+            if (matches && matches[1]) {
+                filename = matches[1];
+            }
+        }
+        
+        // Create download link
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = downloadUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Clean up
+        window.URL.revokeObjectURL(downloadUrl);
+        document.body.removeChild(a);
+        
+        showSuccess('Download complete!');
+    } catch (err) {
+        showError(err.message);
+    } finally {
+        setTimeout(() => {
+            downloadProgress.classList.add('d-none');
+        }, 3000);
+    }
+}
     
     // Helper functions
     function isValidYouTubeUrl(url) {

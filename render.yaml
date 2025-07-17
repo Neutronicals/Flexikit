@@ -5,12 +5,17 @@ services:
     buildCommand: |
       apt-get update
       apt-get install -y ffmpeg
+      pip install --upgrade pip
       pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: |
+      python app.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.13
       - key: SECRET_KEY
         generateValue: true
+      - key: YT_DLP_NO_UPDATE
+        value: "True"
     plan: free
     healthCheckPath: /health
+    autoDeploy: yes

@@ -1,12 +1,14 @@
-from flask import Flask, render_template, request, send_file, jsonify, after_this_request
 import os
 import yt_dlp
 import uuid
+from flask import Flask, render_template, request, send_file, jsonify, send_from_directory
 from datetime import datetime
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB limit
 app.config['DOWNLOAD_FOLDER'] = 'static/downloads/'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 
 # Ensure download folder exists
 os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
@@ -82,23 +84,25 @@ def download():
     
     try:
         filepath = download_video(url, format_id)
+        filename = secure_filename(os.path.basename(filepath))
         
-        @after_this_request
-        def remove_file(response):
-            try:
-                os.remove(filepath)
-            except Exception as e:
-                app.logger.error(f"Error removing file {filepath}: {e}")
-            return response
-            
         return send_file(
             filepath,
             as_attachment=True,
-            download_name=os.path.basename(filepath),
+            download_name=filename,
             mimetype='application/octet-stream'
         )
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+@app.route('/static/downloads/<path:filename>')
+def download_file(filename):
+    return send_from_directory(
+        app.config['DOWNLOAD_FOLDER'],
+        filename,
+        as_attachment=True
+    )
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)

@@ -5,7 +5,8 @@ from flask import Flask, render_template, request, send_file, jsonify, send_from
 from datetime import datetime
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
+# Initialize Flask app
+app = Flask(__name__, static_url_path='', static_folder='static')
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB limit
 app.config['DOWNLOAD_FOLDER'] = 'static/downloads/'
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
@@ -14,6 +15,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
 os.makedirs(app.config['DOWNLOAD_FOLDER'], exist_ok=True)
 
 def get_video_info(url):
+    """Fetch video info from YouTube"""
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -48,6 +50,7 @@ def get_video_info(url):
         }
 
 def download_video(url, format_id):
+    """Download video in selected format"""
     unique_id = str(uuid.uuid4())
     download_path = os.path.join(app.config['DOWNLOAD_FOLDER'], f'{unique_id}.%(ext)s')
     
@@ -55,7 +58,6 @@ def download_video(url, format_id):
         'format': format_id,
         'outtmpl': download_path,
         'quiet': True,
-        'progress_hooks': [lambda d: print(d['status'])],
     }
     
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -66,10 +68,12 @@ def download_video(url, format_id):
 
 @app.route('/')
 def index():
+    """Main page"""
     return render_template('index.html', current_year=datetime.now().year)
 
 @app.route('/get_info', methods=['POST'])
 def get_info():
+    """API endpoint to get video info"""
     url = request.form['url']
     try:
         info = get_video_info(url)
@@ -79,6 +83,7 @@ def get_info():
 
 @app.route('/download', methods=['POST'])
 def download():
+    """API endpoint to download video"""
     url = request.form['url']
     format_id = request.form['format_id']
     
@@ -95,13 +100,10 @@ def download():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
-@app.route('/static/downloads/<path:filename>')
-def download_file(filename):
-    return send_from_directory(
-        app.config['DOWNLOAD_FOLDER'],
-        filename,
-        as_attachment=True
-    )
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Render"""
+    return jsonify({"status": "healthy"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))

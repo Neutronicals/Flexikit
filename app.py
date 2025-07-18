@@ -1,11 +1,12 @@
 import os
 import yt_dlp
 import uuid
-from flask import Flask, render_template, request, send_file, jsonify
+from flask import Flask, render_template, request, Response, jsonify, stream_with_context
 from datetime import datetime
 from werkzeug.utils import secure_filename
 import logging
 from waitress import serve
+import subprocess
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,27 +57,45 @@ class VideoDownloader:
             raise
 
     @staticmethod
-    def download(url, format_id):
-        unique_id = str(uuid.uuid4())
-        download_path = os.path.join(app.config['DOWNLOAD_FOLDER'], f'{unique_id}.%(ext)s')
+    def get_format_ext(url, format_id):
+        # Helper to extract extension for the selected format
         ydl_opts = {
-            'format': format_id,
-            'outtmpl': download_path,
             'quiet': True,
-            'retries': 3,
+            'no_warnings': True,
+            'extract_flat': False,
+            'age_limit': 99,
+            'geo_bypass': True,
+            'geo_bypass_country': 'US',
         }
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                filename = ydl.prepare_filename(info)
-                if not os.path.exists(filename):
-                    raise FileNotFoundError(f"Downloaded file not found at {filename}")
-                return filename
+                info = ydl.extract_info(url, download=False)
+                for f in info['formats']:
+                    if f['format_id'] == format_id:
+                        return f['ext']
         except Exception as e:
-            logger.error(f"Download failed: {str(e)}")
-            if 'filename' in locals() and os.path.exists(filename):
-                os.remove(filename)
-            raise
+            logger.error(f"Error getting video format ext: {str(e)}")
+        return 'mp4'  # fallback
+
+def generate_ytdlp_stream(url, format_id):
+    # Get extension for the right mimetype/filename
+    ext = VideoDownloader.get_format_ext(url, format_id)
+    filename = f"video.{ext}"
+    # Start yt-dlp process to stream to stdout
+    ytdlp_cmd = [
+        "yt-dlp", "-f", format_id, "-o", "-", url
+    ]
+    process = subprocess.Popen(ytdlp_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        while True:
+            chunk = process.stdout.read(8192)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        process.stdout.close()
+        process.stderr.close()
+        process.terminate()
 
 @app.route('/')
 def index():
@@ -99,25 +118,21 @@ def download():
     format_id = request.form.get('format_id', '').strip()
     if not url or not format_id:
         return jsonify({'success': False, 'error': 'URL and format are required'}), 400
-    try:
-        filepath = VideoDownloader.download(url, format_id)
-        filename = secure_filename(os.path.basename(filepath))
-        response = send_file(
-            filepath,
-            as_attachment=True,
-            download_name=filename,
-            mimetype='application/octet-stream'
-        )
-        @response.call_on_close
-        def cleanup():
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            except Exception as e:
-                logger.error(f"Cleanup error: {str(e)}")
-        return response
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 400
+
+    # Get extension for mimetype/filename
+    ext = VideoDownloader.get_format_ext(url, format_id)
+    filename = secure_filename(f"video.{ext}")
+    mimetype = f"video/{ext}" if ext != "unknown" else "application/octet-stream"
+
+    headers = {
+        'Content-Disposition': f'attachment; filename="{filename}"',
+        'Content-Type': mimetype
+    }
+
+    return Response(
+        stream_with_context(generate_ytdlp_stream(url, format_id)),
+        headers=headers
+    )
 
 @app.route('/health')
 def health_check():

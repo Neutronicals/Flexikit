@@ -11,7 +11,6 @@
     
     <!-- Bootstrap 5 CSS -->
    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
-
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -21,6 +20,41 @@
     
     <!-- Custom CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* Spinner/modal styles for download */
+        #download-spinner {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 2000;
+            background: rgba(0,0,0,0.4);
+            justify-content: center;
+            align-items: center;
+        }
+        #download-spinner .spinner-modal-content {
+            background: #fff;
+            padding: 2rem;
+            border-radius: 10px;
+            box-shadow: 0 0 16px #444;
+            text-align: center;
+        }
+        .spinner {
+            margin-bottom: 1rem;
+        }
+        .spinner-animation {
+            border: 6px solid #eee;
+            border-top: 6px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
+    </style>
 </head>
 <body>
     <div class="container-fluid gradient-bg">
@@ -113,6 +147,17 @@
                         </div>
                     </div>
 
+                    <!-- Download Spinner/Modal -->
+                    <div id="download-spinner">
+                        <div class="spinner-modal-content">
+                            <div class="spinner">
+                                <span class="spinner-animation"></span>
+                            </div>
+                            <div>Preparing your download...</div>
+                        </div>
+                    </div>
+                    <!-- End Download Spinner/Modal -->
+
                     <!-- FAQ Section -->
                     <div class="card bg-dark-80 text-white mb-4 border-0">
                         <div class="card-body">
@@ -138,9 +183,56 @@
 
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js" integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM" crossorigin="anonymous"></script>
-
     
     <!-- Custom JavaScript -->
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script>
+    // Download UI logic for showing spinner when download starts
+    document.addEventListener('DOMContentLoaded', function () {
+        // If your script.js already attaches to #downloadBtn, you can integrate this there.
+        var downloadBtn = document.getElementById('downloadBtn');
+        var formatSelect = document.getElementById('formatSelect');
+        var youtubeUrlInput = document.getElementById('youtubeUrl');
+
+        if (downloadBtn) {
+            downloadBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+
+                // Get values
+                var url = youtubeUrlInput.value.trim();
+                var format_id = formatSelect.value;
+
+                if (!url || !format_id) {
+                    alert("Please enter a YouTube URL and select a format.");
+                    return;
+                }
+
+                // Show the spinner/modal overlay
+                document.getElementById('download-spinner').style.display = 'flex';
+
+                // Serialize parameters for GET request
+                var params = new URLSearchParams({
+                    url: url,
+                    format_id: format_id
+                }).toString();
+
+                // Create a hidden iframe to trigger the download
+                var iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+
+                // Hide spinner after short delay (cannot detect actual download start reliably)
+                iframe.onload = function() {
+                    setTimeout(function() {
+                        document.getElementById('download-spinner').style.display = 'none';
+                        document.body.removeChild(iframe);
+                    }, 2000);
+                };
+
+                iframe.src = '/download?' + params;
+                document.body.appendChild(iframe);
+            });
+        }
+    });
+    </script>
 </body>
 </html>
